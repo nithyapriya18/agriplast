@@ -1,0 +1,19 @@
+{
+  "name": "agriplast",
+  "version": "1.0.0",
+  "description": "Agriplast Polyhouse Planning System",
+  "private": true,
+  "scripts": {
+    "install-all": "cd shared && npm install && cd ../backend && npm install && cd ../frontend && npm install",
+    "build-shared": "cd shared && npm run build",
+    "dev-backend": "cd backend && npm run dev",
+    "dev-frontend": "cd frontend && npm run dev",
+    "build-backend": "cd backend && npm run build",
+    "build-frontend": "cd frontend && npm run build",
+    "start-backend": "cd backend && npm start",
+    "start-frontend": "cd frontend && npm start"
+  },
+  "keywords": ["polyhouse", "agriplast", "agriculture", "ai"],
+  "author": "Agriplast",
+  "license": "UNLICENSED"
+}
