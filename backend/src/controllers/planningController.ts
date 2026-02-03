@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PolyhouseOptimizer } from '../services/optimizer';
+import { PolyhouseOptimizerV3 } from '../services/optimizerV3';
 import { generateQuotation } from '../services/quotation';
 import {
   LandArea,
@@ -69,11 +69,13 @@ export async function createPlan(req: Request, res: Response) {
           .from('user_settings')
           .select('*')
           .eq('user_id', userId)
-          .single();
+          .maybeSingle();
 
         if (!error && data) {
           userSettings = data;
           console.log('Loaded user settings from Supabase for user:', userId);
+        } else {
+          console.log('No user settings found, using defaults');
         }
       } catch (error) {
         console.warn('Could not load user settings:', error);
@@ -87,9 +89,9 @@ export async function createPlan(req: Request, res: Response) {
         height: userSettings?.block_height ?? 4, // meters - Standard unit size
       },
       gutterWidth: userSettings?.gutter_width ?? 2, // meters - Standard drainage gutter
-      polyhouseGap: userSettings?.polyhouse_gap ?? 1, // meters - Reduced from 2m for better space utilization (configurable)
-      safetyBuffer: configInput?.safetyBuffer ?? userSettings?.safety_buffer ?? 1, // meters - Safety buffer from land boundary (configurable)
-      maxSideLength: userSettings?.max_side_length ?? 100, // meters - Current limit (configurable)
+      polyhouseGap: userSettings?.polyhouse_gap ?? 2, // meters - 2m standard corridor between polyhouses
+      safetyBuffer: configInput?.safetyBuffer ?? userSettings?.safety_buffer ?? 0.3, // meters - Minimal safety buffer for maximum utilization
+      maxSideLength: userSettings?.max_side_length ?? 120, // meters - Industry standard maximum (allows longer polyhouses)
       minSideLength: userSettings?.min_side_length ?? 8, // meters - Single block minimum
       minCornerDistance: userSettings?.min_corner_distance ?? 4, // meters - Default = block width (configurable: 4m to 100m)
       maxLandArea: configInput?.maxLandArea ?? userSettings?.max_land_area ?? 10000, // sqm - Single polyhouse size limit (configurable)
@@ -114,19 +116,20 @@ export async function createPlan(req: Request, res: Response) {
       ...configInput, // Complete override via API
     };
 
-    // Run optimization
-    console.log('Starting polyhouse optimization...');
+    // Run optimization with V2 optimizer (proven to work)
+    console.log('Starting V2 polyhouse optimization...');
     const startTime = Date.now();
 
-    const optimizer = new PolyhouseOptimizer(landArea, configuration);
+    const { PolyhouseOptimizerV2 } = await import('../services/optimizerV2');
+    const optimizer = new PolyhouseOptimizerV2(landArea, configuration);
     const polyhouses = await optimizer.optimize();
 
     const computationTime = Date.now() - startTime;
     console.log(`Optimization completed in ${computationTime}ms`);
 
-    // Get terrain and compliance data from optimizer
-    const terrainData = optimizer.getTerrainAnalysis();
-    const complianceData = optimizer.getComplianceResults();
+    // Note: V2 optimizer doesn't have terrain/compliance yet (will add in next iteration)
+    const terrainData = null; // optimizer.getTerrainAnalysis();
+    const complianceData = null; // optimizer.getComplianceResults();
 
     // Generate quotation
     const quotation = await generateQuotation(polyhouses, configuration, landArea.id);
@@ -185,41 +188,10 @@ export async function createPlan(req: Request, res: Response) {
         ],
         constraintViolations: [], // Will be populated by optimizer if violations occur
       },
-      // Include terrain analysis if available
-      terrainAnalysis: terrainData ? {
-        buildableAreaPercentage: terrainData.buildableArea * 100,
-        averageSlope: terrainData.averageSlope,
-        elevationRange: terrainData.elevationRange,
-        restrictedZones: terrainData.restrictedAreas.map(zone => ({
-          type: zone.type,
-          coordinates: zone.coordinates, // Include coordinates for visualization
-          area: zone.area,
-          reason: zone.reason,
-          severity: zone.severity,
-        })),
-        warnings: terrainData.warnings,
-      } : undefined,
-      // Include regulatory compliance if available
-      regulatoryCompliance: complianceData ? {
-        compliant: complianceData.compliant,
-        region: 'TBD', // Will be populated from region identification
-        country: 'TBD',
-        violations: complianceData.violations.map(v => ({
-          severity: v.severity,
-          category: v.category,
-          description: v.description,
-          resolution: v.resolution,
-        })),
-        warnings: complianceData.warnings,
-        permitsRequired: complianceData.permits_required.map(p => ({
-          permit_type: p.permit_type,
-          authority: p.authority,
-          estimated_duration_days: p.typical_duration_days,
-          estimated_cost: p.estimated_cost,
-        })),
-        estimatedComplianceCost: complianceData.estimated_compliance_cost,
-        estimatedTimelineDays: complianceData.estimated_timeline_days,
-      } : undefined,
+      // Include terrain analysis if available (V2 doesn't support this yet)
+      terrainAnalysis: undefined,
+      // Include regulatory compliance if available (V2 doesn't support this yet)
+      regulatoryCompliance: undefined,
     };
 
     // Add warnings if utilization is low
@@ -235,23 +207,8 @@ export async function createPlan(req: Request, res: Response) {
       );
     }
 
-    // Add terrain warnings
-    if (terrainData && terrainData.warnings.length > 0) {
-      planningResult.warnings.push(...terrainData.warnings.slice(0, 3)); // Add top 3 terrain warnings
-    }
-
-    // Add regulatory warnings
-    if (complianceData && complianceData.warnings.length > 0) {
-      planningResult.warnings.push(...complianceData.warnings.slice(0, 2).map(w => w.description));
-    }
-
-    // Add critical violations as errors
-    if (complianceData) {
-      const criticalViolations = complianceData.violations.filter(v => v.severity === 'critical');
-      if (criticalViolations.length > 0) {
-        planningResult.errors.push(...criticalViolations.map(v => v.description));
-      }
-    }
+    // V2 optimizer doesn't support terrain/compliance yet
+    // These features will be added in a future iteration
 
     // Store result
     const resultId = `result-${Date.now()}`;
@@ -289,8 +246,9 @@ export async function updatePlan(req: Request, res: Response) {
       ...configUpdate,
     };
 
-    // Re-run optimization if configuration changed
-    const optimizer = new PolyhouseOptimizer(existingPlan.landArea, updatedConfiguration);
+    // Re-run optimization if configuration changed (using V2)
+    const { PolyhouseOptimizerV2 } = await import('../services/optimizerV2');
+    const optimizer = new PolyhouseOptimizerV2(existingPlan.landArea, updatedConfiguration);
     const polyhouses = await optimizer.optimize();
 
     // Generate new quotation

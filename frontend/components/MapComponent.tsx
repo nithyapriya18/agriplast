@@ -168,9 +168,15 @@ export default function MapComponent({
       // If there's already a boundary loaded, enable editing of existing polygon
       if (landBoundary.length > 0) {
         const features = draw.current.getAll();
-        if (features.features.length > 0) {
-          // Switch to direct_select mode to edit the existing polygon
-          (draw.current.changeMode as any)('direct_select', { featureId: features.features[0].id });
+        if (features.features.length > 0 && features.features[0].id) {
+          try {
+            // Switch to direct_select mode to edit the existing polygon
+            (draw.current.changeMode as any)('direct_select', { featureId: features.features[0].id });
+          } catch (error) {
+            console.warn('Could not enter direct_select mode, falling back to simple_select:', error);
+            // Fall back to simple_select if direct_select fails
+            draw.current.changeMode('simple_select');
+          }
         } else {
           // No polygon loaded yet, allow drawing new one
           draw.current.changeMode('draw_polygon');

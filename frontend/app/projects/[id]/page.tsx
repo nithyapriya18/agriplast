@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { PlanningResult, Polyhouse, ConversationMessage } from '@shared/types';
 import QuotationPanel from '@/components/QuotationPanel';
 import EnhancedChatInterface from '@/components/EnhancedChatInterface';
+import OptimizationFactorsPanel from '@/components/OptimizationFactorsPanel';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, Download } from 'lucide-react';
 import { generateProjectPDF } from '@/lib/pdfExport';
@@ -51,6 +52,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [showChat, setShowChat] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
   const [planningResultId, setPlanningResultId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
 
   useEffect(() => {
     loadProject();
@@ -325,13 +328,108 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       };
       setConversationHistory(prev => [...prev, assistantMessage]);
 
-      // If the backend returns an updated planning result, update the project
+      // If the backend returns an updated planning result, update the project and mark as having changes
       if (data.updatedPlanningResult) {
+        console.log('Chat returned updated planning result, regenerating corners before save...');
+
+        // Regenerate corners for blocks that don't have them (CRITICAL FIX for rendering bug)
+        const polyhousesWithCorners = data.updatedPlanningResult.polyhouses.map((polyhouse: any) => {
+          if (!polyhouse.blocks || polyhouse.blocks.length === 0) return polyhouse;
+
+          // Check if any block is missing corners
+          const hasMissingCorners = polyhouse.blocks.some((block: any) =>
+            !block.corners || block.corners.length === 0
+          );
+
+          if (hasMissingCorners) {
+            console.log(`  ⚠️  Polyhouse ${polyhouse.id} has blocks missing corners, regenerating...`);
+
+            // Calculate polyhouse center from bounds (geographic coordinates)
+            if (!polyhouse.bounds || polyhouse.bounds.length === 0) {
+              console.error(`  ❌ Cannot regenerate corners: polyhouse ${polyhouse.id} has no bounds`);
+              return polyhouse;
+            }
+
+            const centerLng = polyhouse.bounds.reduce((sum: number, p: any) => sum + p.x, 0) / polyhouse.bounds.length;
+            const centerLat = polyhouse.bounds.reduce((sum: number, p: any) => sum + p.y, 0) / polyhouse.bounds.length;
+
+            // Regenerate corners for each block
+            const blocksWithCorners = polyhouse.blocks.map((block: any) => {
+              if (block.corners && block.corners.length > 0) return block; // Already has corners
+
+              const angleRad = (block.rotation || 0) * Math.PI / 180;
+              const blockPosX = block.position?.x || 0;
+              const blockPosY = block.position?.y || 0;
+
+              // Create the 4 corners of the block (standard 8m x 4m rectangle)
+              const localCorners = [
+                { x: 0, y: 0 },
+                { x: block.width, y: 0 },
+                { x: block.width, y: block.height },
+                { x: 0, y: block.height },
+              ];
+
+              // Rotate each corner and add to block position (all in local space)
+              const rotatedLocalCorners = localCorners.map((corner: any) => {
+                const rotatedX = corner.x * Math.cos(angleRad) - corner.y * Math.sin(angleRad);
+                const rotatedY = corner.x * Math.sin(angleRad) + corner.y * Math.cos(angleRad);
+
+                return {
+                  x: blockPosX + rotatedX,
+                  y: blockPosY + rotatedY,
+                };
+              });
+
+              // Convert from local meters to geographic coordinates
+              const geoCorners = rotatedLocalCorners.map((corner: any) => {
+                const cornerLat = centerLat + corner.y / 111320;
+                const cornerLng = centerLng + corner.x / (111320 * Math.cos(centerLat * Math.PI / 180));
+
+                return {
+                  x: cornerLng,
+                  y: cornerLat,
+                };
+              });
+
+              return {
+                ...block,
+                corners: geoCorners,
+              };
+            });
+
+            return {
+              ...polyhouse,
+              blocks: blocksWithCorners,
+            };
+          }
+
+          return polyhouse;
+        });
+
+        console.log(`  ✓ Regenerated corners, updating map instantly...`);
+
+        // UPDATE LOCAL STATE IMMEDIATELY - Map updates instantly without any delay!
+        const updatedProject = {
+          ...project,
+          polyhouses: polyhousesWithCorners,
+          configuration: data.updatedPlanningResult.configuration,
+          quotation: data.updatedPlanningResult.quotation,
+          polyhouse_count: data.updatedPlanningResult.polyhouses.length,
+          total_coverage_sqm: data.updatedPlanningResult.metadata.totalPolyhouseAreaWithGutters,
+          utilization_percentage: data.updatedPlanningResult.metadata.utilizationPercentage,
+          estimated_cost: data.updatedPlanningResult.quotation.totalCost,
+        };
+
+        setProject(updatedProject);
+        console.log('  ✅ Map updated instantly! Polyhouses are now visible.');
+
+        // Save to database in background (async, non-blocking)
+        setHasUnsavedChanges(true);
         const supabase = createClient();
-        const { error } = await supabase
+        supabase
           .from('projects')
           .update({
-            polyhouses: data.updatedPlanningResult.polyhouses,
+            polyhouses: polyhousesWithCorners,
             configuration: data.updatedPlanningResult.configuration,
             quotation: data.updatedPlanningResult.quotation,
             polyhouse_count: data.updatedPlanningResult.polyhouses.length,
@@ -340,14 +438,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             estimated_cost: data.updatedPlanningResult.quotation.totalCost,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', project.id);
-
-        if (error) {
-          console.error('Error updating project:', error);
-        } else {
-          // Reload the project to show updated data
-          await loadProject();
-        }
+          .eq('id', project.id)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Background save failed:', error);
+            } else {
+              console.log('  ✅ Changes saved to database');
+              setHasUnsavedChanges(false);
+            }
+          });
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -393,7 +492,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const handleBoundaryComplete = (boundary: any) => {
     if (editMode) {
       setModifiedBoundary(boundary);
+      setHasUnsavedChanges(true);
     }
+  };
+
+  const handleCloseProject = () => {
+    if (hasUnsavedChanges) {
+      setShowCloseConfirmation(true);
+    } else {
+      router.push('/dashboard');
+    }
+  };
+
+  const handleConfirmClose = async (saveChanges: boolean) => {
+    if (saveChanges) {
+      await handleSave(false);
+    }
+    setShowCloseConfirmation(false);
+    router.push('/dashboard');
   };
 
   const handleSave = async (saveAsNew: boolean) => {
@@ -455,7 +571,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
         if (error) throw error;
 
-        alert('New project created successfully');
+        alert('New project created successfully. Redirecting to new project...');
         router.push(`/projects/${data.id}`);
       } else {
         // Update existing project
@@ -477,9 +593,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
         if (error) throw error;
 
-        alert('Project updated successfully');
+        alert('Project saved successfully');
         setEditMode(false);
         setModifiedBoundary(null);
+        setHasUnsavedChanges(false);
         await loadProject(); // Reload the project to show updated data
       }
     } catch (error) {
@@ -578,12 +695,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  className="text-gray-600 hover:text-gray-900"
-                >
-                  ←
-                </button>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
                   <p className="text-sm text-gray-500 mt-1">
@@ -601,6 +712,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
               >
                 {showQuotation ? 'Hide' : 'Show'} Quotation
+              </button>
+
+              <button
+                onClick={handleCloseProject}
+                className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Close Project
               </button>
             </div>
           </div>
@@ -645,8 +763,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           editMode={editMode}
         />
 
+        {/* Optimization Factors Panel */}
+        <div className="absolute top-4 left-4 z-10 max-w-md max-h-[calc(100vh-8rem)] overflow-y-auto">
+          <OptimizationFactorsPanel
+            configuration={planningResult.configuration}
+            metadata={planningResult.metadata}
+            terrainAnalysis={planningResult.terrainAnalysis}
+            regulatoryCompliance={planningResult.regulatoryCompliance}
+          />
+        </div>
+
         {/* Actions Overlay */}
-        <div className="absolute top-4 left-4 z-10 bg-white rounded-lg shadow-lg p-4 space-y-3">
+        <div className="absolute bottom-4 left-4 z-10 bg-white rounded-lg shadow-lg p-4 space-y-3">
           <h3 className="font-semibold text-gray-900">Actions</h3>
 
           {!editMode ? (
@@ -763,6 +891,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 planningResult={planningResult}
                 onRestoreSnapshot={handleRestoreSnapshot}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Close Confirmation Modal */}
+        {showCloseConfirmation && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Unsaved Changes</h3>
+              <p className="text-gray-600 mb-6">
+                You have unsaved changes. Do you want to save them before closing?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowCloseConfirmation(false)}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleConfirmClose(false)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={() => handleConfirmClose(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  Save & Close
+                </button>
+              </div>
             </div>
           </div>
         )}

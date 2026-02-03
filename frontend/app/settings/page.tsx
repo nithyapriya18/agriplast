@@ -70,7 +70,7 @@ export default function SettingsPage() {
 
       setUser(user);
 
-      // Load user settings
+      // Load user settings (use defaults if fails)
       const { data, error } = await supabase
         .from('user_settings')
         .select('*')
@@ -79,15 +79,15 @@ export default function SettingsPage() {
 
       if (error && error.code !== 'PGRST116') {
         // PGRST116 = not found, which is okay for new users
-        throw error;
+        // Other errors: just log and use defaults
+        console.warn('Could not load user settings, using defaults:', error.message);
       }
 
       if (data) {
         setSettings(data);
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
-      setMessage({ type: 'error', text: 'Failed to load settings' });
+      console.warn('Error loading settings, using defaults:', error);
     } finally {
       setLoading(false);
     }

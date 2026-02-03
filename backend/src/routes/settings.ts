@@ -18,7 +18,7 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
     // In production, fetch from database
     res.json({
       polyhouse_gap: 2.0,
-      max_side_length: 100.0,
+      max_side_length: 120.0, // Updated to 120m (industry standard)
       min_side_length: 8.0,
       min_corner_distance: 4.0,
       gutter_width: 2.0,

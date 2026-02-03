@@ -143,10 +143,46 @@ export const EUROPEAN_SETBACKS: Map<string, SetbackRequirements> = new Map([
 ]);
 
 // ============================================================================
+// AUSTRALIAN STATES AND TERRITORIES (8 states/territories)
+// ============================================================================
+
+export const AUSTRALIAN_REGIONS: Map<string, RegulatoryRegion> = new Map([
+  // For southern hemisphere, numerically: -28.2 > -37.5, so for lat >= south && lat <= north to work,
+  // we need south = -37.5 (smaller number) and north = -28.2 (larger number)
+  ['AU-NSW', { id: 'AU-NSW', name: 'New South Wales', country: 'Australia', state: 'New South Wales', bounds: { north: -28.2, south: -37.5, east: 153.6, west: 141 } }],
+  ['AU-VIC', { id: 'AU-VIC', name: 'Victoria', country: 'Australia', state: 'Victoria', bounds: { north: -34, south: -39.2, east: 149.9, west: 140.9 } }],
+  ['AU-QLD', { id: 'AU-QLD', name: 'Queensland', country: 'Australia', state: 'Queensland', bounds: { north: -9.2, south: -29.2, east: 153.6, west: 138 } }],
+  ['AU-WA', { id: 'AU-WA', name: 'Western Australia', country: 'Australia', state: 'Western Australia', bounds: { north: -13.7, south: -35.1, east: 129, west: 113 } }],
+  ['AU-SA', { id: 'AU-SA', name: 'South Australia', country: 'Australia', state: 'South Australia', bounds: { north: -26, south: -38, east: 141, west: 129 } }],
+  ['AU-TAS', { id: 'AU-TAS', name: 'Tasmania', country: 'Australia', state: 'Tasmania', bounds: { north: -39.6, south: -43.6, east: 148.5, west: 144 } }],
+  ['AU-NT', { id: 'AU-NT', name: 'Northern Territory', country: 'Australia', state: 'Northern Territory', bounds: { north: -10.9, south: -26, east: 138, west: 129 } }],
+  ['AU-ACT', { id: 'AU-ACT', name: 'Australian Capital Territory', country: 'Australia', state: 'ACT', bounds: { north: -35.1, south: -35.9, east: 149.4, west: 148.7 } }],
+]);
+
+export const AUSTRALIAN_SETBACKS: Map<string, SetbackRequirements> = new Map([
+  ['AU-NSW', { from_property_boundary: 5, from_road: 10, from_water_body: 20, from_forest: 30, from_residential_area: 25, from_existing_structures: 10, from_utility_lines: 15 }],
+  ['AU-VIC', { from_property_boundary: 5, from_road: 10, from_water_body: 20, from_forest: 30, from_residential_area: 25, from_existing_structures: 10, from_utility_lines: 15 }],
+  ['AU-QLD', { from_property_boundary: 6, from_road: 12, from_water_body: 25, from_forest: 35, from_residential_area: 30, from_existing_structures: 12, from_utility_lines: 15 }],
+  ['AU-WA', { from_property_boundary: 5, from_road: 10, from_water_body: 20, from_forest: 30, from_residential_area: 25, from_existing_structures: 10, from_utility_lines: 15 }],
+  ['AU-SA', { from_property_boundary: 5, from_road: 10, from_water_body: 20, from_forest: 30, from_residential_area: 25, from_existing_structures: 10, from_utility_lines: 15 }],
+  ['AU-TAS', { from_property_boundary: 5, from_road: 10, from_water_body: 20, from_forest: 30, from_residential_area: 25, from_existing_structures: 10, from_utility_lines: 15 }],
+  ['AU-NT', { from_property_boundary: 6, from_road: 12, from_water_body: 25, from_forest: 35, from_residential_area: 30, from_existing_structures: 12, from_utility_lines: 15 }],
+]);
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 export function getRegionByCoordinates(lat: number, lng: number): RegulatoryRegion | null {
+  // Check Australian regions (southern hemisphere - negative latitudes)
+  for (const [id, region] of AUSTRALIAN_REGIONS) {
+    // For southern hemisphere, south is more negative than north
+    if (lat >= region.bounds.south && lat <= region.bounds.north &&
+        lng >= region.bounds.west && lng <= region.bounds.east) {
+      return region;
+    }
+  }
+
   // Check Indian regions
   for (const [id, region] of INDIAN_REGIONS) {
     if (lat >= region.bounds.south && lat <= region.bounds.north &&
@@ -179,14 +215,16 @@ export function getAllRegions(): RegulatoryRegion[] {
     ...Array.from(INDIAN_REGIONS.values()),
     ...Array.from(US_REGIONS.values()),
     ...Array.from(EUROPEAN_REGIONS.values()),
+    ...Array.from(AUSTRALIAN_REGIONS.values()),
   ];
 }
 
-export function getRegionCount(): { india: number; usa: number; europe: number; total: number } {
+export function getRegionCount(): { india: number; usa: number; europe: number; australia: number; total: number } {
   return {
     india: INDIAN_REGIONS.size,
     usa: US_REGIONS.size,
     europe: EUROPEAN_REGIONS.size,
-    total: INDIAN_REGIONS.size + US_REGIONS.size + EUROPEAN_REGIONS.size,
+    australia: AUSTRALIAN_REGIONS.size,
+    total: INDIAN_REGIONS.size + US_REGIONS.size + EUROPEAN_REGIONS.size + AUSTRALIAN_REGIONS.size,
   };
 }

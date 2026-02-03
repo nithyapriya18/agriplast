@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { BedrockService } from '../services/bedrock';
 import { planningResults } from './planningController';
 import { ChatRequest, ConversationMessage } from '@shared/types';
-import { PolyhouseOptimizer } from '../services/optimizer';
+import { PolyhouseOptimizerV3 } from '../services/optimizerV3';
 import { generateQuotation } from '../services/quotation';
 import { usageTrackingService } from '../services/usageTracking';
 
@@ -56,8 +56,9 @@ export async function handleChat(req: Request, res: Response) {
         ...result.updatedConfig,
       };
 
-      // Re-run optimization
-      const optimizer = new PolyhouseOptimizer(currentPlan.landArea, updatedConfiguration);
+      // Re-run optimization with V2 (maximum-sized polyhouses)
+      const { PolyhouseOptimizerV2 } = await import('../services/optimizerV2');
+      const optimizer = new PolyhouseOptimizerV2(currentPlan.landArea, updatedConfiguration);
       const polyhouses = await optimizer.optimize();
 
       // Generate new quotation
@@ -94,6 +95,7 @@ export async function handleChat(req: Request, res: Response) {
 
     // Clean up response by removing control flags
     const cleanResponse = result.response
+      .replace(/\[RECALCULATE:UNIFORM_ORIENTATION[^\]]*\]/g, '')
       .replace('[RECALCULATE:MAXIMIZE]', '')
       .replace('[RECALCULATE:IGNORE_RESTRICTIONS]', '')
       .replace('[RECALCULATE]', '')

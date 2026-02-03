@@ -13,6 +13,8 @@ import {
   US_SETBACKS,
   EUROPEAN_REGIONS,
   EUROPEAN_SETBACKS,
+  AUSTRALIAN_REGIONS,
+  AUSTRALIAN_SETBACKS,
   getRegionByCoordinates,
   getRegionCount,
 } from '../data/regionalRegulations';
@@ -121,6 +123,7 @@ export class RegulatoryComplianceService {
     console.log(`  ✓ ${regionCount.india} Indian states/territories`);
     console.log(`  ✓ ${regionCount.usa} US states`);
     console.log(`  ✓ ${regionCount.europe} European countries`);
+    console.log(`  ✓ ${regionCount.australia} Australian states/territories`);
     console.log(`  ✓ ${regionCount.total} total regions supported`);
   }
 
@@ -331,6 +334,10 @@ export class RegulatoryComplianceService {
    * Get setback requirements for region from comprehensive database
    */
   private getSetbackRequirements(region: RegulatoryRegion): SetbackRequirements {
+    // Check Australian setbacks
+    const australianSetback = AUSTRALIAN_SETBACKS.get(region.id);
+    if (australianSetback) return australianSetback;
+
     // Check Indian setbacks
     const indianSetback = INDIAN_SETBACKS.get(region.id);
     if (indianSetback) return indianSetback;
@@ -418,7 +425,7 @@ export class RegulatoryComplianceService {
         warnings.push({
           category: rule.category,
           description: rule.requirement,
-          recommendation: `Ensure compliance with ${rule.code}: ${rule.requirement}`,
+          recommendation: `Ensure compliance with ${code.code} ${rule.id}: ${rule.requirement}`,
         });
       }
     }
@@ -483,6 +490,40 @@ export class RegulatoryComplianceService {
           'Structural engineering certification',
         ],
       });
+    }
+
+    // Building permit (Australia)
+    if (region.country === 'Australia') {
+      permits.push({
+        permit_type: 'Agricultural Building Permit',
+        required_for: 'Polyhouse/greenhouse construction',
+        authority: `${region.state || region.name} Local Council`,
+        typical_duration_days: 30,
+        estimated_cost: 800, // AUD
+        documentation_required: [
+          'Site plan',
+          'Building specifications',
+          'Land title documents',
+          'Development application',
+        ],
+      });
+
+      // Environmental assessment for large projects
+      const totalArea = structures.reduce((sum, s) => sum + s.area, 0);
+      if (totalArea > 3000) {
+        permits.push({
+          permit_type: 'Environmental Impact Assessment',
+          required_for: 'Large-scale agricultural development (>3000 sqm)',
+          authority: `${region.state} Environment Protection Authority`,
+          typical_duration_days: 60,
+          estimated_cost: 5000, // AUD
+          documentation_required: [
+            'Environmental impact statement',
+            'Flora and fauna assessment',
+            'Water management plan',
+          ],
+        });
+      }
     }
 
     return permits;

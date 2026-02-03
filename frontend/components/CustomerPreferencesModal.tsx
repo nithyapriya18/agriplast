@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 
 export interface CustomerPreferences {
-  cropType: 'flowers' | 'leafy' | 'vine' | 'mixed';
+  structureType: 'polyhouse' | 'cablenet' | 'fanpad';
+  cropType: 'flowers' | 'leafy' | 'vine' | 'mixed' | 'strawberries' | 'blueberries';
   polyhouseSize: 'large' | 'mixed' | 'small';
   budgetRange: 'economy' | 'standard' | 'premium';
   automation: boolean;
@@ -26,12 +27,13 @@ export default function CustomerPreferencesModal({
   onSubmit,
 }: CustomerPreferencesModalProps) {
   const [preferences, setPreferences] = useState<CustomerPreferences>({
+    structureType: 'polyhouse',
     cropType: 'mixed',
-    polyhouseSize: 'mixed',
+    polyhouseSize: 'large', // Default: Fewer, larger polyhouses
     budgetRange: 'standard',
     automation: false,
     vehicleAccess: false,
-    priority: 'balanced',
+    priority: 'coverage', // Default: Maximum utilization
     orientationPreference: 'optimized',
     timeline: 'planned',
   });
@@ -63,16 +65,62 @@ export default function CustomerPreferencesModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Structure Type - MOST IMPORTANT */}
+          <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg border-2 border-green-200">
+            <label className="block text-sm font-bold text-gray-900 mb-3">
+              🏗️ 1. What type of structure do you need?
+            </label>
+            <div className="grid grid-cols-1 gap-3">
+              {[
+                {
+                  value: 'polyhouse',
+                  label: 'Polyhouse (NVPH)',
+                  desc: 'Naturally Ventilated - Most Popular (80-90% of projects)',
+                  details: 'Best for tomatoes, peppers, cucumbers, leafy greens'
+                },
+                {
+                  value: 'cablenet',
+                  label: 'Cable Net House',
+                  desc: 'Low-cost greenhouse with net covering',
+                  details: 'Good for basic protection, cost-effective'
+                },
+                {
+                  value: 'fanpad',
+                  label: 'Fan & Pad Structure',
+                  desc: 'Climate controlled for high-value crops (<15-20°C)',
+                  details: 'Perfect for strawberries, blueberries, premium leafy greens'
+                },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setPreferences({ ...preferences, structureType: option.value as any })}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    preferences.structureType === option.value
+                      ? 'border-green-600 bg-green-50 shadow-md'
+                      : 'border-gray-200 hover:border-green-300 bg-white'
+                  }`}
+                >
+                  <div className="font-bold text-gray-900 text-lg">{option.label}</div>
+                  <div className="text-sm text-gray-700 mt-1 font-medium">{option.desc}</div>
+                  <div className="text-xs text-gray-500 mt-1">{option.details}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Crop Type */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">
-              1. What crops will you primarily grow?
+              2. What crops will you primarily grow?
             </label>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { value: 'flowers', label: 'Flowers', desc: 'High-value, specific climate needs' },
-                { value: 'leafy', label: 'Leafy Vegetables', desc: 'Lettuce, spinach, herbs' },
                 { value: 'vine', label: 'Vine Crops', desc: 'Tomatoes, cucumbers, peppers' },
+                { value: 'leafy', label: 'Leafy Vegetables', desc: 'Lettuce, spinach, herbs' },
+                { value: 'flowers', label: 'Flowers', desc: 'Roses, gerberas, carnations' },
+                { value: 'strawberries', label: 'Strawberries', desc: 'Requires climate control' },
+                { value: 'blueberries', label: 'Blueberries', desc: 'Premium, cool climate' },
                 { value: 'mixed', label: 'Mixed/Experimental', desc: 'Multiple crop types' },
               ].map((option) => (
                 <button
@@ -85,35 +133,6 @@ export default function CustomerPreferencesModal({
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <div className="font-medium text-gray-900">{option.label}</div>
-                  <div className="text-xs text-gray-500 mt-1">{option.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Polyhouse Size Preference */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">
-              2. What size polyhouses do you prefer?
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { value: 'large', label: 'Fewer, Larger', desc: 'Big polyhouses, easier management', icon: '🏢' },
-                { value: 'mixed', label: 'Mixed Sizes', desc: 'Optimized coverage (Recommended)', icon: '📦' },
-                { value: 'small', label: 'More, Smaller', desc: 'Better for varied crops', icon: '🏘️' },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setPreferences({ ...preferences, polyhouseSize: option.value as any })}
-                  className={`p-3 rounded-lg border-2 text-left transition-all ${
-                    preferences.polyhouseSize === option.value
-                      ? 'border-agriplast-green-600 bg-agriplast-green-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">{option.icon}</div>
                   <div className="font-medium text-gray-900">{option.label}</div>
                   <div className="text-xs text-gray-500 mt-1">{option.desc}</div>
                 </button>
@@ -180,7 +199,7 @@ export default function CustomerPreferencesModal({
           {/* Vehicle Access */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">
-              5. Do you need vehicle access between polyhouses?
+              5. Do you need vehicle access between structures?
             </label>
             <div className="grid grid-cols-2 gap-3">
               {[
@@ -204,38 +223,10 @@ export default function CustomerPreferencesModal({
             </div>
           </div>
 
-          {/* Priority */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">
-              5. What's most important to you?
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { value: 'coverage', label: 'Max Coverage', desc: 'More polyhouses, tight spacing' },
-                { value: 'quality', label: 'Quality & Access', desc: 'Better spacing, fewer structures' },
-                { value: 'balanced', label: 'Balanced', desc: 'Optimal middle ground' },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setPreferences({ ...preferences, priority: option.value as any })}
-                  className={`p-3 rounded-lg border-2 text-center transition-all ${
-                    preferences.priority === option.value
-                      ? 'border-agriplast-green-600 bg-agriplast-green-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="font-medium text-gray-900">{option.label}</div>
-                  <div className="text-xs text-gray-500 mt-1">{option.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Orientation Preference */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">
-              6. How should polyhouses be oriented?
+              6. How should structures be oriented?
             </label>
             <div className="grid grid-cols-3 gap-3">
               {[
@@ -308,12 +299,13 @@ export default function CustomerPreferencesModal({
               onClick={() => {
                 // Use default preferences (balanced, standard setup)
                 const defaultPreferences: CustomerPreferences = {
+                  structureType: 'polyhouse',
                   cropType: 'mixed',
-                  polyhouseSize: 'mixed',
+                  polyhouseSize: 'large', // Fewer, larger polyhouses
                   budgetRange: 'standard',
                   automation: false,
                   vehicleAccess: false,
-                  priority: 'balanced',
+                  priority: 'coverage', // Maximum utilization
                   orientationPreference: 'optimized',
                   timeline: 'planned',
                 };

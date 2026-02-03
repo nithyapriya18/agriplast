@@ -144,7 +144,7 @@ export default function QuotationPanel({ planningResult }: QuotationPanelProps) 
                     {polyhouse.innerArea.toFixed(0)} m²
                   </p>
                   <p className="text-xs text-gray-600">
-                    {polyhouse.orientation.toFixed(0)}° orientation
+                    {(polyhouse.rotation || polyhouse.orientation || 0).toFixed(0)}° orientation
                   </p>
                 </div>
               </div>

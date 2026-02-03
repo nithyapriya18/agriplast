@@ -34,21 +34,29 @@ export interface Block {
   corners: Point[]; // 4 corners of the rectangle
 }
 
-// Polyhouse - Collection of blocks with gutters
+// Polyhouse - Rectangular greenhouse structure with industry-standard dimensions
 export interface Polyhouse {
   id: string;
   label: string; // User-friendly label (A, B, C, ..., AA, AB, etc.)
   color: string; // Hex color for visualization (#4CAF50, etc.)
-  blocks: Block[];
-  orientation: number; // degrees from north (0-360)
-  gutterWidth: number; // 2 meters (default)
-  bounds: Point[]; // Outer boundary including gutter
-  area: number; // Total area including gutter
-  innerArea: number; // Area of blocks only
+  blocks: Block[]; // 8x4m grid blocks inside the polyhouse
+
+  // Professional polyhouse dimensions (industry standards)
+  gableLength: number; // X direction (long side), multiples of 8m
+  gutterWidth: number; // Y direction (short side), multiples of 4m
+  rotation: number; // Angle in degrees (0-360)
+  center: Coordinate; // Center point of the polyhouse
+
+  bounds: Point[]; // Outer boundary corners
+  area: number; // Total area (gableLength × gutterWidth)
+  innerArea: number; // Area available for growing (same as area for rectangular polyhouses)
   dimensions: {
-    length: number; // North-South extent
-    width: number; // East-West extent
+    length: number; // Gable length (X direction)
+    width: number; // Gutter width (Y direction)
   };
+
+  // Legacy field for backward compatibility
+  orientation?: number; // degrees from north (0-360) - use rotation instead
 }
 
 // Corner types for polyhouse edges
@@ -72,11 +80,11 @@ export interface PolyhouseConfiguration {
     height: number; // 4 meters (standard)
   };
 
-  // Gutter specifications
-  gutterWidth: number; // 2 meters (default)
+  // Gutter specifications (no longer used - gutters are part of the 8x4 block structure)
+  gutterWidth?: number; // DEPRECATED: Use gableLength/gutterWidth in Polyhouse instead
 
-  // Spacing between polyhouses
-  polyhouseGap: number; // 2 meters (minimum default)
+  // Spacing between polyhouses (corridors)
+  polyhouseGap: number; // 2 meters (default) - walking corridors between structures
 
   // Safety buffer from land boundary
   safetyBuffer: number; // 1 meter (default) - prevents placement too close to edges
