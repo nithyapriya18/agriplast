@@ -81,14 +81,19 @@ out geom;
         throw new Error(`Overpass API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { elements?: any[] };
 
       const roads: OSMRoad[] = [];
       const buildings: OSMBuilding[] = [];
       const water: OSMWater[] = [];
       const forests: OSMForest[] = [];
 
-      // Process OSM elements
+      // Process OSM elements - check if data.elements exists
+      if (!data.elements || !Array.isArray(data.elements)) {
+        console.warn('OSM API returned no elements');
+        return { roads, buildings, water, forests };
+      }
+
       for (const element of data.elements) {
         if (element.type !== 'way' || !element.geometry) continue;
 

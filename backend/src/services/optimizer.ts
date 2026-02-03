@@ -343,7 +343,7 @@ export class PolyhouseOptimizer {
           // Try to create expanded polyhouse at same center position and orientation
           const expandedPolyhouse = this.createPolyhouse(
             centerPosition,
-            polyhouse.orientation,
+            polyhouse.rotation,
             newLengthBlocks,
             newWidthBlocks
           );
@@ -568,15 +568,18 @@ export class PolyhouseOptimizer {
     }
 
     // Calculate polyhouse bounds with gutter
-    const bounds = this.calculatePolyhouseBoundsWithGutter(blocks, this.config.gutterWidth);
+    const gutterWidth = this.config.gutterWidth ?? 0;
+    const bounds = this.calculatePolyhouseBoundsWithGutter(blocks, gutterWidth);
 
     return {
       id: `polyhouse-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       label: '', // Will be assigned after optimization
       color: '', // Will be assigned after optimization
       blocks,
-      orientation,
-      gutterWidth: this.config.gutterWidth,
+      rotation: orientation,
+      gableLength: totalLength,
+      gutterWidth: totalWidth,
+      center: centerPosition,
       bounds: bounds.map(coord => ({ x: coord.lng, y: coord.lat })),
       area: this.calculatePolygonArea(bounds),
       innerArea: lengthBlocks * widthBlocks * blockWidth * blockHeight,
