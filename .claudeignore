@@ -1,0 +1,15 @@
+node_modules/
+__pycache__/
+.pytest_cache/
+venv/
+.venv/
+*.pyc
+.DS_Store
+*.log
+.env*
+dist/
+build/
+.next/
+coverage/
+tsconfig.tsbuildinfo
+package-lock.json

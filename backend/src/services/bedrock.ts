@@ -155,6 +155,13 @@ IMPORTANT: Uniform orientation is NOT required. For irregular or angled land, po
 
 WHEN USERS REQUEST CHANGES - TAKE ACTION:
 
+⚠️ **CRITICAL**: If a user asks to CHANGE, MODIFY, ADJUST, IMPROVE, ADD, REMOVE, or ALTER the polyhouse layout in ANY WAY, you MUST include a [RECALCULATE] tag. Without this tag, no changes will be applied!
+
+**ANY Layout Change Request** (phrases like "change", "adjust", "modify", "improve", "make better", "add more", "reduce", "different"):
+- IMMEDIATELY trigger "[RECALCULATE:MAXIMIZE]" (default to maximize unless they specify otherwise)
+- Brief response: "Updating the layout now..."
+- This ensures changes are actually applied to the map
+
 **Maximum Coverage/Utilization** (phrases like "maximize", "fill space", "cover more", "use empty areas", "fill gaps"):
 - IMMEDIATELY trigger "[RECALCULATE:MAXIMIZE]"
 - Explain briefly: "Filling those spaces now..." or "Maximizing coverage..."
@@ -368,7 +375,24 @@ When answering questions, consider the local climate and latitude when giving ad
     // Check for minimum blocks changes
     const hasMinimumBlocksChange = /minimum\s+blocks?\s+(?:per\s+polyhouse\s+)?(?:to\s+)?(\d+)/i.test(response);
 
-    return hasRecalculateTag || hasMinimumBlocksChange;
+    // Check for action phrases that indicate layout changes
+    const actionPhrases = [
+      /updating\s+the\s+layout/i,
+      /filling\s+(?:those\s+)?(?:spaces|gaps)/i,
+      /maximizing\s+coverage/i,
+      /angling\s+polyhouses/i,
+      /aligning\s+them/i,
+      /placing\s+(?:more\s+)?polyhouses/i,
+      /adding\s+(?:more\s+)?polyhouses/i,
+      /adjusting\s+the\s+design/i,
+      /modifying\s+the\s+layout/i,
+      /re-optimizing/i,
+      /recalculating/i,
+    ];
+
+    const hasActionPhrase = actionPhrases.some(pattern => pattern.test(response));
+
+    return hasRecalculateTag || hasMinimumBlocksChange || hasActionPhrase;
   }
 
   /**

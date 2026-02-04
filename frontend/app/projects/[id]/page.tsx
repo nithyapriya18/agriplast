@@ -8,8 +8,9 @@ import QuotationPanel from '@/components/QuotationPanel';
 import EnhancedChatInterface from '@/components/EnhancedChatInterface';
 import OptimizationFactorsPanel from '@/components/OptimizationFactorsPanel';
 import { VersionHistory } from '@/components/VersionHistory';
+import VersionNotesModal from '@/components/VersionNotesModal';
 import { createClient } from '@/lib/supabase/client';
-import { Loader2, Download } from 'lucide-react';
+import { Loader2, Download, Save } from 'lucide-react';
 import { generateProjectPDF } from '@/lib/pdfExport';
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), {
@@ -45,7 +46,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showQuotation, setShowQuotation] = useState(false);
+  const [showQuotation, setShowQuotation] = useState(false); // Quotation starts minimized
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,10 +57,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<number>(1);
+  const [showVersionNotesModal, setShowVersionNotesModal] = useState(false);
+  const [pendingVersionNotes, setPendingVersionNotes] = useState<string>('');
 
   useEffect(() => {
     loadProject();
   }, [id]);
+
+  // Debug: Watch for polyhouse changes
+  useEffect(() => {
+    if (project?.polyhouses) {
+      console.log('🔄 Project polyhouses changed! Count:', project.polyhouses.length);
+      console.log('  First polyhouse:', project.polyhouses[0]);
+    }
+  }, [project?.polyhouses]);
 
   const loadProject = async () => {
     try {
@@ -187,6 +198,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
 
       setProject(data);
+
+      // Load existing chat history from database
+      const { data: chatMessages } = await supabase
+        .from('chat_messages')
+        .select('role, content, created_at')
+        .eq('project_id', data.id)
+        .order('created_at', { ascending: true });
+
+      if (chatMessages && chatMessages.length > 0) {
+        const history: ConversationMessage[] = chatMessages.map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+        }));
+        setConversationHistory(history);
+      }
 
       // Load the project into the backend's planningResults Map for chat
       // This is necessary because the chat API expects the planning result to be in memory
@@ -316,6 +343,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setConversationHistory(prev => [...prev, userMessage]);
 
     try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Save user message to database
+      if (user) {
+        const { error: userMsgError } = await supabase.from('chat_messages').insert({
+          project_id: project.id,
+          user_id: user.id,
+          role: 'user',
+          content: message,
+        });
+        if (userMsgError) {
+          console.error('Error saving user message to database:', userMsgError);
+        } else {
+          console.log('✓ User message saved to database');
+        }
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -323,8 +368,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           planningResultId: planningResultId,
           message,
           conversationHistory: [...conversationHistory, userMessage],
+          userId: user?.id,
+          projectId: project.id,
+          customerPreferences: project.configuration,
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `API Error: ${response.status}`);
+      }
 
       const data = await response.json();
 
@@ -335,9 +388,27 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       };
       setConversationHistory(prev => [...prev, assistantMessage]);
 
+      // Save assistant message to database
+      if (user) {
+        const { error: assistantMsgError } = await supabase.from('chat_messages').insert({
+          project_id: project.id,
+          user_id: user.id,
+          role: 'assistant',
+          content: data.response,
+        });
+        if (assistantMsgError) {
+          console.error('Error saving assistant message to database:', assistantMsgError);
+        } else {
+          console.log('✓ Assistant message saved to database');
+        }
+      }
+
       // If the backend returns an updated planning result, update the project and mark as having changes
       if (data.updatedPlanningResult) {
-        console.log('Chat returned updated planning result, regenerating corners before save...');
+        console.log('📦 Chat returned updated planning result');
+        console.log('  Old polyhouse count:', project.polyhouses?.length);
+        console.log('  New polyhouse count:', data.updatedPlanningResult.polyhouses?.length);
+        console.log('  Updated planning result:', data.updatedPlanningResult);
 
         // Regenerate corners for blocks that don't have them (CRITICAL FIX for rendering bug)
         const polyhousesWithCorners = data.updatedPlanningResult.polyhouses.map((polyhouse: any) => {
@@ -427,42 +498,70 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           estimated_cost: data.updatedPlanningResult.quotation.totalCost,
         };
 
+        console.log('⚙️ About to call setProject with updated data');
+        console.log('  Updated project polyhouses:', updatedProject.polyhouses.length);
         setProject(updatedProject);
-        console.log('  ✅ Map updated instantly! Polyhouses are now visible.');
-
-        // Save to database in background (async, non-blocking)
-        setHasUnsavedChanges(true);
-        const supabase = createClient();
-        supabase
-          .from('projects')
-          .update({
-            polyhouses: polyhousesWithCorners,
-            configuration: data.updatedPlanningResult.configuration,
-            quotation: data.updatedPlanningResult.quotation,
-            polyhouse_count: data.updatedPlanningResult.polyhouses.length,
-            total_coverage_sqm: data.updatedPlanningResult.metadata.totalPolyhouseAreaWithGutters,
-            utilization_percentage: data.updatedPlanningResult.metadata.utilizationPercentage,
-            estimated_cost: data.updatedPlanningResult.quotation.totalCost,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', project.id)
-          .then(({ error }) => {
-            if (error) {
-              console.error('Background save failed:', error);
-            } else {
-              console.log('  ✅ Changes saved to database');
-              setHasUnsavedChanges(false);
-            }
-          });
+        setHasUnsavedChanges(true); // Mark as unsaved so user can save as new version
+        console.log('  ✅ setProject called! Changes marked as unsaved - user can save with version notes.');
       }
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: ConversationMessage = {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or check if the backend server is running.`,
         timestamp: new Date(),
       };
       setConversationHistory(prev => [...prev, errorMessage]);
+    }
+  };
+
+  const handleSaveWithNotes = async (notes: string) => {
+    if (!project || !planningResult) return;
+
+    setSaving(true);
+    try {
+      // Create a new version
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${project.id}/create-version`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planningResult: {
+              landArea: planningResult.landArea,
+              polyhouses: planningResult.polyhouses,
+              configuration: planningResult.configuration,
+              quotation: planningResult.quotation,
+              metadata: planningResult.metadata,
+              terrainAnalysis: planningResult.terrainAnalysis,
+            },
+            quotation: planningResult.quotation,
+            versionName: notes || `Version ${currentVersion + 1}`,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create version');
+      }
+
+      const versionData = await response.json();
+
+      // Update current state
+      setCurrentVersion(versionData.version);
+      setHasUnsavedChanges(false);
+      setShowVersionNotesModal(false);
+
+      alert(`Saved as Version ${versionData.version}!`);
+
+      // Navigate to the new version
+      router.push(`/projects/${versionData.project.id}`);
+    } catch (error) {
+      console.error('Error saving version:', error);
+      alert('Failed to save version. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -649,6 +748,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // Create PlanningResult object for components that need it
+  console.log('🎨 Component rendering. Project polyhouses count:', project?.polyhouses?.length);
   const planningResult: PlanningResult | null = project ? {
     success: true,
     landArea: {
@@ -685,6 +785,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     terrainAnalysis: project.terrain_analysis,
     regulatoryCompliance: undefined,
   } : null;
+
+  if (planningResult) {
+    console.log('📊 planningResult created with', planningResult.polyhouses.length, 'polyhouses');
+  }
 
   if (loading) {
     return (
@@ -801,7 +905,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             configuration={planningResult.configuration}
             metadata={planningResult.metadata}
             terrainAnalysis={planningResult.terrainAnalysis}
-            regulatoryCompliance={planningResult.regulatoryCompliance}
           />
         </div>
 
@@ -811,6 +914,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
           {!editMode ? (
             <>
+              {hasUnsavedChanges && (
+                <button
+                  onClick={() => setShowVersionNotesModal(true)}
+                  className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium flex items-center justify-center gap-2 animate-pulse"
+                >
+                  <Save size={16} />
+                  Save Changes
+                </button>
+              )}
+
               <button
                 onClick={() => setShowChat(!showChat)}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
@@ -906,24 +1019,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
         {/* Chat Interface */}
         {showChat && planningResult && (
-          <div className="absolute bottom-4 right-4 w-96 h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-20 flex flex-col transition-colors">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-green-600 dark:bg-green-700 text-white transition-colors">
-              <h3 className="font-semibold">Chat Assistant</h3>
-              <button
-                onClick={() => setShowChat(false)}
-                className="text-white hover:text-gray-200 dark:hover:text-gray-300 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <EnhancedChatInterface
-                conversationHistory={conversationHistory}
-                onSendMessage={handleChatMessage}
-                planningResult={planningResult}
-                onRestoreSnapshot={handleRestoreSnapshot}
-              />
-            </div>
+          <div className="absolute bottom-4 right-4 w-96 h-[600px] rounded-lg shadow-2xl overflow-hidden z-20 flex flex-col">
+            <EnhancedChatInterface
+              conversationHistory={conversationHistory}
+              onSendMessage={handleChatMessage}
+              planningResult={planningResult}
+              onRestoreSnapshot={handleRestoreSnapshot}
+              onClose={() => setShowChat(false)}
+            />
           </div>
         )}
 
@@ -958,6 +1061,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </div>
           </div>
         )}
+
+        {/* Version Notes Modal */}
+        <VersionNotesModal
+          isOpen={showVersionNotesModal}
+          onClose={() => setShowVersionNotesModal(false)}
+          onSave={handleSaveWithNotes}
+          saving={saving}
+        />
       </div>
     </main>
   );

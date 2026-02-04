@@ -485,6 +485,10 @@ export default function NewProjectPage() {
           quotation: planningResult.quotation,
           terrain_analysis: planningResult.terrainAnalysis,
           status: 'draft',
+          version: 1, // Initial version
+          parent_project_id: null, // This is the root project
+          is_latest: true, // This is the latest version
+          version_name: null, // No custom name for initial version
         })
         .select()
         .single();

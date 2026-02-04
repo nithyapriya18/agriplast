@@ -14,14 +14,12 @@ interface OptimizationFactorsPanelProps {
   configuration: any;
   metadata?: any;
   terrainAnalysis?: any;
-  regulatoryCompliance?: any;
 }
 
 export default function OptimizationFactorsPanel({
   configuration,
   metadata,
   terrainAnalysis,
-  regulatoryCompliance,
 }: OptimizationFactorsPanelProps) {
 
   // Calculate solar orientation info
@@ -53,21 +51,24 @@ export default function OptimizationFactorsPanel({
   };
 
   const getTerrainInfo = () => {
-    if (!configuration?.terrain?.enabled || !terrainAnalysis) {
+    // Terrain analysis is considered "enabled" if considerSlope is true OR if we have terrain analysis data
+    const terrainEnabled = configuration?.terrain?.considerSlope || (terrainAnalysis && Object.keys(terrainAnalysis).length > 0);
+
+    if (!terrainEnabled) {
       return {
         status: 'disabled' as const,
-        description: 'Terrain analysis not applied',
-        details: 'Polyhouses placed without terrain restrictions',
+        description: 'Terrain analysis: Basic mode',
+        details: 'Advanced terrain analysis disabled. Polyhouses placed assuming flat land. Enable in settings for slope and elevation analysis.',
       };
     }
 
-    const buildable = terrainAnalysis.buildableArea ? (terrainAnalysis.buildableArea * 100).toFixed(1) : 'N/A';
-    const avgSlope = terrainAnalysis.averageSlope?.toFixed(1) || 'N/A';
-    const restricted = terrainAnalysis.restrictedAreas?.length || 0;
+    const buildable = terrainAnalysis?.buildableAreaPercentage ? terrainAnalysis.buildableAreaPercentage.toFixed(1) : 'N/A';
+    const avgSlope = terrainAnalysis?.averageSlope?.toFixed(1) || 'N/A';
+    const restricted = terrainAnalysis?.restrictedZones?.length || 0;
 
     return {
       status: restricted > 0 ? 'warning' as const : 'applied' as const,
-      description: 'Terrain analysis applied',
+      description: 'Terrain analysis: Advanced mode',
       details: `Buildable area: ${buildable}%, Average slope: ${avgSlope}°, Restricted zones: ${restricted}`,
     };
   };
@@ -81,27 +82,6 @@ export default function OptimizationFactorsPanel({
       status: 'applied' as const,
       description: 'Spacing rules enforced',
       details: `Gutter: ${gutter}m around polyhouses, Gap: ${gap}m between structures, Edge buffer: ${buffer}m from boundaries`,
-    };
-  };
-
-  const getRegulatoryInfo = () => {
-    if (!regulatoryCompliance?.checksPerformed) {
-      return {
-        status: 'disabled' as const,
-        description: 'Regulatory compliance not checked',
-        details: 'No regulatory constraints applied',
-      };
-    }
-
-    const passed = regulatoryCompliance.compliant;
-    const issues = regulatoryCompliance.issues?.length || 0;
-
-    return {
-      status: passed ? 'applied' as const : 'warning' as const,
-      description: passed ? 'Regulatory compliant' : 'Regulatory warnings',
-      details: passed
-        ? 'All regulatory requirements met'
-        : `${issues} issue(s) detected - check regulatory panel`,
     };
   };
 
@@ -120,11 +100,6 @@ export default function OptimizationFactorsPanel({
       name: 'Spacing & Safety',
       icon: <Compass className="w-5 h-5" />,
       ...getSpacingInfo(),
-    },
-    {
-      name: 'Regulatory Compliance',
-      icon: <AlertTriangle className="w-5 h-5" />,
-      ...getRegulatoryInfo(),
     },
   ];
 

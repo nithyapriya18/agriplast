@@ -23,6 +23,7 @@ interface EnhancedChatInterfaceProps {
   onSendMessage: (message: string) => void;
   planningResult?: PlanningResult | null;
   onRestoreSnapshot?: (snapshot: PlanningResult) => void;
+  onClose?: () => void;
 }
 
 export default function EnhancedChatInterface({
@@ -30,6 +31,7 @@ export default function EnhancedChatInterface({
   onSendMessage,
   planningResult,
   onRestoreSnapshot,
+  onClose,
 }: EnhancedChatInterfaceProps) {
   const [inputMessage, setInputMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -38,6 +40,7 @@ export default function EnhancedChatInterface({
   const [messageFeedback, setMessageFeedback] = useState<Map<string, 'up' | 'down' | null>>(new Map());
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Convert ConversationMessage to EnhancedMessage with IDs and snapshots
   const enhancedMessages: EnhancedMessage[] = conversationHistory.map((msg, index) => ({
@@ -50,6 +53,14 @@ export default function EnhancedChatInterface({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversationHistory]);
+
+  // Auto-resize textarea as user types
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+    }
+  }, [inputMessage]);
 
   const handleSend = async () => {
     if (!inputMessage.trim() || sending) return;
@@ -115,25 +126,66 @@ export default function EnhancedChatInterface({
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 transition-all duration-300">
       {/* Header */}
-      <div className="bg-gradient-to-r from-agriplast-green-600 to-agriplast-green-500 dark:from-agriplast-green-700 dark:to-agriplast-green-600 text-white p-6 shadow-xl backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="absolute inset-0 bg-white/20 rounded-full blur-md"></div>
-            <div className="relative bg-white/10 p-2 rounded-full backdrop-blur-sm">
-              <Bot className="w-6 h-6" />
+      <div className="bg-gradient-to-r from-agriplast-green-600 to-agriplast-green-500 dark:from-agriplast-green-700 dark:to-agriplast-green-600 text-white p-4 shadow-xl backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="absolute inset-0 bg-white/20 rounded-full blur-md"></div>
+              <div className="relative bg-white/10 p-2 rounded-full backdrop-blur-sm">
+                <Bot className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold tracking-tight">AI Assistant</h2>
+              <p className="text-xs text-green-50 mt-0.5 font-medium">
+                {isTyping ? 'Thinking...' : 'Ready to help'}
+              </p>
             </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold tracking-tight">AI Assistant</h2>
-            <p className="text-xs text-green-50 mt-0.5 font-medium">
-              {isTyping ? 'Thinking...' : 'Ready to help with your polyhouse planning'}
-            </p>
-          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 p-2 rounded-lg"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
+        {/* Welcome message when chat is empty */}
+        {enhancedMessages.length === 0 && (
+          <div className="flex gap-3 justify-start animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-agriplast-green-100 dark:bg-agriplast-green-900 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-agriplast-green-700 dark:text-agriplast-green-300" />
+            </div>
+            <div className="max-w-[85%] flex flex-col items-start">
+              <div className="rounded-2xl p-4 shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <div className="prose prose-sm max-w-none prose-gray dark:prose-invert">
+                  <p className="text-sm mb-3">
+                    👋 Hi! I'm your AI planning assistant. I can help you with:
+                  </p>
+                  <ul className="text-sm space-y-1 mb-3">
+                    <li>Adjusting polyhouse placement and configuration</li>
+                    <li>Explaining material choices and costs</li>
+                    <li>Optimizing space utilization</li>
+                    <li>Answering questions about your plan</li>
+                  </ul>
+                  <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="text-sm text-green-800 dark:text-green-200 font-medium">
+                      💡 Your detailed quotation is available! Click on <span className="font-bold">"Show Quotation"</span> button at the top to view pricing and materials.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {enhancedMessages.map((message) => {
           const isExpanded = expandedMessages.has(message.id);
           const isWorkflowExpanded = expandedWorkflow.has(message.id);
@@ -147,18 +199,18 @@ export default function EnhancedChatInterface({
               } animate-in fade-in slide-in-from-bottom-4 duration-500`}
             >
               {isAssistant && (
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 flex items-center justify-center shadow-lg ring-4 ring-purple-100 dark:ring-purple-900/30">
-                  <Bot className="w-5 h-5 text-white" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-agriplast-green-100 dark:bg-agriplast-green-900 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-agriplast-green-700 dark:text-agriplast-green-300" />
                 </div>
               )}
 
               <div className={`max-w-[85%] flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}>
                 {/* Message bubble */}
                 <div
-                  className={`rounded-2xl p-5 shadow-xl select-text transition-all duration-300 hover:shadow-2xl ${
+                  className={`rounded-2xl p-4 shadow-md select-text transition-all duration-200 ${
                     isAssistant
-                      ? 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
-                      : 'bg-gradient-to-br from-agriplast-green-600 via-agriplast-green-600 to-agriplast-green-700 text-white shadow-green-500/20'
+                      ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+                      : 'bg-agriplast-green-600 text-white'
                   }`}
                 >
                   {/* Restore button */}
@@ -176,47 +228,49 @@ export default function EnhancedChatInterface({
                   )}
 
                   {/* Content */}
-                  <div className={`prose prose-sm max-w-none ${isAssistant ? 'prose-gray dark:prose-invert' : 'prose-invert'}`}>
+                  <div className={`${isAssistant ? 'text-gray-800 dark:text-gray-200' : 'text-white'}`}>
                     {isAssistant ? (
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      <div className="text-sm leading-relaxed prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
                     ) : (
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                     )}
                   </div>
 
                   {/* Timestamp and feedback */}
-                  <div className={`flex items-center justify-between mt-3 pt-3 border-t ${isAssistant ? 'border-gray-100 dark:border-gray-700' : 'border-white/20'}`}>
-                    <p className={`text-xs ${isAssistant ? 'text-gray-500 dark:text-gray-400' : 'text-white/70'}`}>
+                  <div className={`flex items-center justify-between mt-2 ${isAssistant ? '' : ''}`}>
+                    <p className={`text-xs ${isAssistant ? 'text-gray-400 dark:text-gray-500' : 'text-white/60'}`}>
                       {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
 
                     {isAssistant && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleFeedback(message.id, 'up');
                           }}
-                          className={`p-2 rounded-lg transition-all duration-200 ${
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
                             message.feedback === 'up'
-                              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 shadow-sm'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:scale-110'
+                              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500'
                           }`}
                         >
-                          <ThumbsUp size={14} fill={message.feedback === 'up' ? 'currentColor' : 'none'} />
+                          <ThumbsUp size={12} fill={message.feedback === 'up' ? 'currentColor' : 'none'} />
                         </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleFeedback(message.id, 'down');
                           }}
-                          className={`p-2 rounded-lg transition-all duration-200 ${
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
                             message.feedback === 'down'
-                              ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 shadow-sm'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:scale-110'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500'
                           }`}
                         >
-                          <ThumbsDown size={14} fill={message.feedback === 'down' ? 'currentColor' : 'none'} />
+                          <ThumbsDown size={12} fill={message.feedback === 'down' ? 'currentColor' : 'none'} />
                         </button>
                       </div>
                     )}
@@ -287,77 +341,48 @@ export default function EnhancedChatInterface({
               </div>
 
               {!isAssistant && (
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-agriplast-green-600 via-agriplast-green-600 to-agriplast-green-700 flex items-center justify-center shadow-lg ring-4 ring-green-100 dark:ring-green-900/30">
-                  <User className="w-5 h-5 text-white" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-agriplast-green-600 flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
                 </div>
               )}
             </div>
           );
         })}
 
-        {/* Typing Indicator */}
-        {isTyping && (
-          <div className="flex gap-3 justify-start animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 flex items-center justify-center shadow-lg ring-4 ring-purple-100 dark:ring-purple-900/30">
-              <Bot className="w-5 h-5 text-white" />
-            </div>
-            <div className="max-w-[85%] flex flex-col items-start">
-              <div className="rounded-2xl p-5 shadow-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 animate-pulse">AI is thinking...</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl shadow-2xl">
-        <div className="flex gap-3">
+      <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 shadow-2xl">
+        <div className="flex gap-2">
           <div className="flex-1 relative">
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about materials, costs, or request changes..."
+              placeholder="Ask anything about your plan..."
               disabled={sending}
-              className="w-full px-5 py-4 border-2 border-gray-200 dark:border-gray-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-agriplast-green-500 focus:border-agriplast-green-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition-all duration-300 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm hover:shadow-md"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-agriplast-green-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition-all duration-200 placeholder:text-gray-400 dark:placeholder:text-gray-500 resize-none text-sm overflow-hidden"
+              style={{ minHeight: '44px', maxHeight: '120px' }}
             />
           </div>
           <button
             onClick={handleSend}
             disabled={!inputMessage.trim() || sending}
-            className="px-6 py-4 bg-gradient-to-r from-agriplast-green-600 to-agriplast-green-700 hover:from-agriplast-green-700 hover:to-agriplast-green-800 text-white rounded-2xl hover:shadow-xl disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center gap-2 font-semibold min-w-[120px] justify-center shadow-lg hover:scale-105 active:scale-95"
+            className="px-4 h-[44px] bg-gradient-to-r from-agriplast-green-600 to-agriplast-green-700 hover:from-agriplast-green-700 hover:to-agriplast-green-800 text-white rounded-xl disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg active:scale-95"
           >
             {sending ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Sending</span>
-              </>
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
-              <>
-                <Send className="w-5 h-5" />
-                <span>Send</span>
-              </>
+              <Send className="w-5 h-5" />
             )}
           </button>
         </div>
-        <div className="flex items-center gap-2 mt-3">
-          <div className="flex-1 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-              Try: "Maximize my space utilization" or "Set minimum blocks to 15"
-            </p>
-          </div>
+        <div className="mt-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            💡 Try: "Maximize space" or "Use cheaper materials"
+          </p>
         </div>
       </div>
     </div>

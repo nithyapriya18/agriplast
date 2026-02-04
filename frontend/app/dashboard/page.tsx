@@ -20,7 +20,8 @@ interface Project {
   status: string;
   created_at: string;
   updated_at: string;
-  chat_summary?: string;
+  version_name?: string | null;
+  version?: number;
 }
 
 export default function DashboardPage() {
@@ -60,31 +61,8 @@ export default function DashboardPage() {
 
       if (error) throw error;
 
-      // Load chat summaries for each project
-      const projectsWithSummaries = await Promise.all(
-        (data || []).map(async (project) => {
-          const { data: messages } = await supabase
-            .from('chat_messages')
-            .select('content, role')
-            .eq('project_id', project.id)
-            .order('created_at', { ascending: false })
-            .limit(10);
-
-          let summary = '';
-          if (messages && messages.length > 0) {
-            const userMessages = messages.filter(m => m.role === 'user');
-            if (userMessages.length > 0) {
-              // Take last 3 user messages and create summary
-              const recentTopics = userMessages.slice(0, 3).map(m => m.content);
-              summary = recentTopics.join('; ').substring(0, 100) + (recentTopics.join('; ').length > 100 ? '...' : '');
-            }
-          }
-
-          return { ...project, chat_summary: summary };
-        })
-      );
-
-      setProjects(projectsWithSummaries);
+      // Projects already include version_name from the database
+      setProjects(data || []);
     } catch (error) {
       console.error('Error loading projects:', error);
     } finally {
@@ -319,7 +297,7 @@ export default function DashboardPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">Utilization</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[130px]">Cost</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[200px]">Chat Summary</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[200px]">Version Notes</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[200px]">Actions</th>
                 </tr>
               </thead>
@@ -379,7 +357,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400 transition-colors min-w-[200px]">
                       <div className="max-w-xs truncate">
-                        {project.chat_summary || <span className="text-gray-400 dark:text-gray-500 italic">No conversation</span>}
+                        {project.version_name || <span className="text-gray-400 dark:text-gray-500 italic">Initial version</span>}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium min-w-[200px]">
