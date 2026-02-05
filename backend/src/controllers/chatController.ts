@@ -6,7 +6,15 @@ import { PolyhouseOptimizerV3 } from '../services/optimizerV3';
 import { generateQuotation } from '../services/quotation';
 import { usageTrackingService } from '../services/usageTracking';
 
-const bedrockService = new BedrockService();
+// Lazy-load Bedrock service to avoid crashing on startup if AWS credentials are missing
+let bedrockService: BedrockService | null = null;
+
+function getBedrockService(): BedrockService {
+  if (!bedrockService) {
+    bedrockService = new BedrockService();
+  }
+  return bedrockService;
+}
 
 /**
  * Handle conversational chat about polyhouse planning
@@ -24,7 +32,7 @@ export async function handleChat(req: Request, res: Response) {
     }
 
     // Process conversation with Bedrock (including customer preferences for context)
-    const result = await bedrockService.handleConversation(
+    const result = await getBedrockService().handleConversation(
       message,
       conversationHistory,
       currentPlan,
