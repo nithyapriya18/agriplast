@@ -29,3 +29,5 @@ services:
         sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
+      - key: FRONTEND_URL
+        value: https://agriplast-gilt.vercel.app
