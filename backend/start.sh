@@ -5,21 +5,24 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Check if we're already in the backend directory
-if [ -f "$SCRIPT_DIR/dist/index.js" ]; then
-    # We're in the backend directory
-    echo "Starting from backend directory..."
+# TypeScript output structure: dist/backend/src/index.js
+# Try multiple possible locations
+if [ -f "$SCRIPT_DIR/dist/backend/src/index.js" ]; then
+    echo "Starting from backend directory (dist/backend/src structure)..."
+    node "$SCRIPT_DIR/dist/backend/src/index.js"
+elif [ -f "$SCRIPT_DIR/dist/index.js" ]; then
+    echo "Starting from backend directory (dist/index.js)..."
     node "$SCRIPT_DIR/dist/index.js"
-elif [ -f "$SCRIPT_DIR/../backend/dist/index.js" ]; then
-    # We're in the project root
+elif [ -f "$SCRIPT_DIR/../backend/dist/backend/src/index.js" ]; then
     echo "Starting from project root..."
     cd "$SCRIPT_DIR/../backend" || exit 1
-    node dist/index.js
+    node dist/backend/src/index.js
 else
-    echo "Error: Cannot find dist/index.js"
+    echo "Error: Cannot find compiled index.js"
     echo "Script directory: $SCRIPT_DIR"
     echo "Current directory: $(pwd)"
-    echo "Listing files:"
-    ls -la "$SCRIPT_DIR"
+    echo "Checking possible locations:"
+    ls -la "$SCRIPT_DIR/dist/" 2>/dev/null || echo "No dist folder"
+    find "$SCRIPT_DIR/dist" -name "index.js" 2>/dev/null || echo "No index.js found"
     exit 1
 fi
