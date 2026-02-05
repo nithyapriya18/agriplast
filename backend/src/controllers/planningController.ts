@@ -14,9 +14,13 @@ import { supabase } from '../lib/supabase';
 import { TerrainAnalysisService } from '../services/terrainAnalysis';
 import { RegulatoryComplianceService } from '../services/regulatoryCompliance';
 import { reverseGeocode } from '../utils/geocoding';
+import { jobQueueService } from '../services/jobQueue';
 
 // In-memory storage (replace with database in production)
 const planningResults = new Map<string, PlanningResult>();
+
+// Export for chat controller
+export { planningResults };
 
 /**
  * Create a new polyhouse plan
@@ -124,6 +128,45 @@ export async function createPlan(req: Request, res: Response) {
       ...configInput, // Complete override via API
     };
 
+    // Create job for async processing
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const job = jobQueueService.createJob(jobId);
+
+    // Return immediately with job ID
+    res.json({
+      jobId,
+      status: 'processing',
+      message: 'Optimization started. Poll /api/planning/status/:jobId for progress.',
+      estimatedTime: Math.ceil(landArea.area / 10000) * 15, // Estimate: 15 seconds per hectare
+    });
+
+    // Process optimization in background (don't await)
+    processOptimizationAsync(jobId, landArea, configuration, userId).catch(error => {
+      console.error('Background optimization failed:', error);
+      jobQueueService.failJob(jobId, error instanceof Error ? error.message : 'Unknown error');
+    });
+
+  } catch (error) {
+    console.error('Error creating plan:', error);
+    res.status(500).json({
+      error: 'Failed to create plan',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Background processing function for optimization
+ */
+async function processOptimizationAsync(
+  jobId: string,
+  landArea: LandArea,
+  configuration: PolyhouseConfiguration,
+  userId?: string
+) {
+  try {
+    jobQueueService.updateProgress(jobId, 10);
+
     // CRITICAL: Perform terrain analysis BEFORE optimization
     // This allows optimizer to avoid water bodies and restricted zones
     console.log('Starting terrain analysis...');
@@ -132,6 +175,7 @@ export async function createPlan(req: Request, res: Response) {
 
     if (configuration.terrain?.avoidWater || configuration.terrain?.considerSlope) {
       try {
+        jobQueueService.updateProgress(jobId, 20);
         const terrainService = new TerrainAnalysisService();
         terrainData = await terrainService.analyzeTerrain(landArea.coordinates, {
           resolution: 'medium',
@@ -140,6 +184,7 @@ export async function createPlan(req: Request, res: Response) {
           slopeThreshold: configuration.terrain?.maxSlope ?? 15,
         });
         console.log(`✓ Terrain analysis complete: ${terrainData.restrictedAreas?.length || 0} restricted zones found`);
+        jobQueueService.updateProgress(jobId, 40);
 
         // Check if area is buildable
         const buildablePercentage = (terrainData.buildableArea / landArea.area) * 100;
@@ -158,6 +203,7 @@ export async function createPlan(req: Request, res: Response) {
 
     // Run optimization with V2 optimizer (proven to work)
     console.log('Starting V2 polyhouse optimization...');
+    jobQueueService.updateProgress(jobId, 50);
     const startTime = Date.now();
 
     const { PolyhouseOptimizerV2 } = await import('../services/optimizerV2');
@@ -166,6 +212,7 @@ export async function createPlan(req: Request, res: Response) {
 
     const computationTime = Date.now() - startTime;
     console.log(`Optimization completed in ${computationTime}ms`);
+    jobQueueService.updateProgress(jobId, 70);
 
     // Run regulatory compliance check after optimization
     if (terrainData) {
@@ -197,9 +244,11 @@ export async function createPlan(req: Request, res: Response) {
     }
 
     // Generate quotation
+    jobQueueService.updateProgress(jobId, 85);
     const quotation = await generateQuotation(polyhouses, configuration, landArea.id);
 
     // Calculate metadata
+    jobQueueService.updateProgress(jobId, 95);
     // Use total area (including gutters) for utilization since gutters are required space
     const totalPolyhouseInnerArea = polyhouses.reduce((sum, p) => sum + p.innerArea, 0);
     const totalPolyhouseAreaWithGutters = polyhouses.reduce((sum, p) => sum + p.area, 0);
@@ -335,14 +384,42 @@ export async function createPlan(req: Request, res: Response) {
     const resultId = `result-${Date.now()}`;
     planningResults.set(resultId, planningResult);
 
+    // Mark job as completed
+    jobQueueService.completeJob(jobId, planningResult);
+    console.log(`✓ Optimization job ${jobId} completed successfully`);
+
+  } catch (error) {
+    console.error('Background optimization error:', error);
+    jobQueueService.failJob(jobId, error instanceof Error ? error.message : 'Unknown error');
+    throw error;
+  }
+}
+
+/**
+ * Get job status (for polling async optimization)
+ */
+export async function getJobStatus(req: Request, res: Response) {
+  try {
+    const { jobId } = req.params;
+
+    const job = jobQueueService.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
     res.json({
-      planningResult,
-      resultId,
+      jobId: job.id,
+      status: job.status,
+      progress: job.progress || 0,
+      result: job.result,
+      error: job.error,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
     });
   } catch (error) {
-    console.error('Error creating plan:', error);
+    console.error('Error getting job status:', error);
     res.status(500).json({
-      error: 'Failed to create plan',
+      error: 'Failed to get job status',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
