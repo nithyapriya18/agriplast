@@ -65,10 +65,52 @@ export default function NewProjectPage() {
   const [structureType, setStructureType] = useState<'polyhouse' | 'cable_net' | 'fan_pad'>('polyhouse');
   const [crop, setCrop] = useState<string>('');
   const [showCropSelection, setShowCropSelection] = useState(false);
+  const [optimizationProgress, setOptimizationProgress] = useState<number>(0);
+  const [optimizationStatus, setOptimizationStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
 
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Poll for job status (async optimization)
+  const pollJobStatus = async (jobId: string): Promise<any> => {
+    const maxAttempts = 120; // 2 minutes max (120 * 1 second)
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/planning/status/${jobId}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to check job status');
+        }
+
+        // Update progress
+        setOptimizationProgress(data.progress || 0);
+
+        if (data.status === 'completed' && data.result) {
+          setOptimizationStatus('completed');
+          return data.result;
+        }
+
+        if (data.status === 'failed') {
+          setOptimizationStatus('failed');
+          throw new Error(data.error || 'Optimization failed');
+        }
+
+        // Still processing, wait and try again
+        setOptimizationStatus('processing');
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second
+        attempts++;
+      } catch (error) {
+        console.error('Polling error:', error);
+        throw error;
+      }
+    }
+
+    throw new Error('Optimization timed out');
+  };
 
   const checkAuth = async () => {
     const supabase = createClient();
@@ -293,31 +335,61 @@ export default function NewProjectPage() {
 
       const data = await response.json();
 
-      if (!response.ok || !data.planningResult) {
+      if (!response.ok) {
         const errorMsg = data.error || data.message || 'Failed to create plan';
         console.error('API Error:', errorMsg);
         alert(`Failed to create plan: ${errorMsg}`);
         return;
       }
 
+      // Handle async response (new backend with jobId)
+      let planningResultData;
+      if (data.jobId) {
+        console.log('✓ Async optimization started, job ID:', data.jobId);
+        setOptimizationStatus('processing');
+        setOptimizationProgress(0);
+
+        try {
+          // Poll for completion
+          planningResultData = await pollJobStatus(data.jobId);
+          console.log('✓ Optimization completed');
+        } catch (pollError: any) {
+          const errorMsg = pollError.message || 'Optimization failed';
+          console.error('Polling error:', errorMsg);
+          alert(`Optimization failed: ${errorMsg}`);
+          setOptimizationStatus('failed');
+          return;
+        }
+      } else if (data.planningResult) {
+        // Handle sync response (backward compatibility)
+        planningResultData = data.planningResult;
+      } else {
+        alert('Invalid response from server');
+        return;
+      }
+
+      // Reset optimization status
+      setOptimizationStatus('idle');
+      setOptimizationProgress(0);
+
       // DEBUG: Log the received polyhouses structure
       console.log('=== NEW PROJECT POLYHOUSE DEBUG ===');
-      console.log('Received polyhouses:', data.planningResult.polyhouses?.length || 0);
-      if (data.planningResult.polyhouses && data.planningResult.polyhouses.length > 0) {
+      console.log('Received polyhouses:', planningResultData.polyhouses?.length || 0);
+      if (planningResultData.polyhouses && planningResultData.polyhouses.length > 0) {
         console.log('Sample polyhouse:', {
-          id: data.planningResult.polyhouses[0].id,
-          blocksCount: data.planningResult.polyhouses[0].blocks?.length,
-          hasBlocks: !!data.planningResult.polyhouses[0].blocks,
-          hasBounds: !!data.planningResult.polyhouses[0].bounds,
-          firstBlock: data.planningResult.polyhouses[0].blocks?.[0],
-          hasCorners: data.planningResult.polyhouses[0].blocks?.[0]?.corners?.length > 0,
-          cornersLength: data.planningResult.polyhouses[0].blocks?.[0]?.corners?.length,
-          sampleCorner: data.planningResult.polyhouses[0].blocks?.[0]?.corners?.[0],
+          id: planningResultData.polyhouses[0].id,
+          blocksCount: planningResultData.polyhouses[0].blocks?.length,
+          hasBlocks: !!planningResultData.polyhouses[0].blocks,
+          hasBounds: !!planningResultData.polyhouses[0].bounds,
+          firstBlock: planningResultData.polyhouses[0].blocks?.[0],
+          hasCorners: planningResultData.polyhouses[0].blocks?.[0]?.corners?.length > 0,
+          cornersLength: planningResultData.polyhouses[0].blocks?.[0]?.corners?.length,
+          sampleCorner: planningResultData.polyhouses[0].blocks?.[0]?.corners?.[0],
         });
 
         // CRITICAL FIX: Regenerate corners for blocks that don't have them
         let needsRegeneration = false;
-        data.planningResult.polyhouses.forEach((polyhouse: any) => {
+        planningResultData.polyhouses.forEach((polyhouse: any) => {
           if (!polyhouse.blocks || polyhouse.blocks.length === 0) return;
 
           // Check if any block is missing corners
@@ -388,7 +460,7 @@ export default function NewProjectPage() {
       }
 
       // Check for terrain warnings BEFORE rendering polyhouses
-      const terrainInfo = data.planningResult.terrainAnalysis;
+      const terrainInfo = planningResultData.terrainAnalysis;
       if (terrainInfo && (terrainInfo.warnings?.length > 0 || terrainInfo.restrictedZones?.length > 0)) {
         // Show warning dialog and let user decide
         const warningsText = terrainInfo.warnings?.join('\n') || '';
@@ -409,8 +481,8 @@ export default function NewProjectPage() {
         }
       }
 
-      if (!data.planningResult.polyhouses || data.planningResult.polyhouses.length === 0) {
-        const terrainInfo = data.planningResult.terrainAnalysis;
+      if (!planningResultData.polyhouses || planningResultData.polyhouses.length === 0) {
+        const terrainInfo = planningResultData.terrainAnalysis;
         let message = 'No polyhouses could be placed on this land area.\n\n';
 
         if (terrainInfo?.restrictedZones && terrainInfo.restrictedZones.length > 0) {
@@ -435,35 +507,35 @@ export default function NewProjectPage() {
       }
 
       // Set detected location FIRST for the optimization logs
-      if (data.planningResult.landArea?.name) {
-        setDetectedLocation(data.planningResult.landArea.name);
-        console.log('✓ Location detected:', data.planningResult.landArea.name);
+      if (planningResultData.landArea?.name) {
+        setDetectedLocation(planningResultData.landArea.name);
+        console.log('✓ Location detected:', planningResultData.landArea.name);
 
         // Keep console visible for 2 more seconds to show the location
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      setPlanningResult(data.planningResult);
+      setPlanningResult(planningResultData);
       setPlanningResultId(data.resultId);
       setShowQuotation(true);
       setEditMode(false);
 
       // Auto-fill location name from reverse geocoding if not already set
-      if (data.planningResult.landArea?.name && !projectDetails.locationName) {
+      if (planningResultData.landArea?.name && !projectDetails.locationName) {
         setProjectDetails(prev => ({
           ...prev,
-          locationName: data.planningResult.landArea.name,
+          locationName: planningResultData.landArea.name,
         }));
-        console.log('✓ Auto-filled location name:', data.planningResult.landArea.name);
+        console.log('✓ Auto-filled location name:', planningResultData.landArea.name);
       }
 
-      if (data.planningResult.metadata?.totalLandArea) {
-        setLandAreaSize(data.planningResult.metadata.totalLandArea);
+      if (planningResultData.metadata?.totalLandArea) {
+        setLandAreaSize(planningResultData.metadata.totalLandArea);
       }
 
       const initialMessage: ConversationMessage = {
         role: 'assistant',
-        content: `I've created a plan with ${data.planningResult.polyhouses.length} polyhouse(s) covering ${data.planningResult.metadata.totalPolyhouseArea.toFixed(0)} sqm (${data.planningResult.metadata.utilizationPercentage.toFixed(1)}% utilization). The estimated cost is ₹${data.planningResult.quotation.totalCost.toLocaleString('en-IN')}. How can I help you with this plan?`,
+        content: `I've created a plan with ${planningResultData.polyhouses.length} polyhouse(s) covering ${planningResultData.metadata.totalPolyhouseArea.toFixed(0)} sqm (${planningResultData.metadata.utilizationPercentage.toFixed(1)}% utilization). The estimated cost is ₹${planningResultData.quotation.totalCost.toLocaleString('en-IN')}. How can I help you with this plan?`,
         timestamp: new Date(),
       };
       setConversationHistory([initialMessage]);

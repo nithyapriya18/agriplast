@@ -58,10 +58,52 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [currentVersion, setCurrentVersion] = useState<number>(1);
   const [showVersionNotesModal, setShowVersionNotesModal] = useState(false);
   const [pendingVersionNotes, setPendingVersionNotes] = useState<string>('');
+  const [optimizationProgress, setOptimizationProgress] = useState<number>(0);
+  const [optimizationStatus, setOptimizationStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
 
   useEffect(() => {
     loadProject();
   }, [id]);
+
+  // Poll for job status (async optimization)
+  const pollJobStatus = async (jobId: string): Promise<any> => {
+    const maxAttempts = 120; // 2 minutes max (120 * 1 second)
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/planning/status/${jobId}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to check job status');
+        }
+
+        // Update progress
+        setOptimizationProgress(data.progress || 0);
+
+        if (data.status === 'completed' && data.result) {
+          setOptimizationStatus('completed');
+          return data.result;
+        }
+
+        if (data.status === 'failed') {
+          setOptimizationStatus('failed');
+          throw new Error(data.error || 'Optimization failed');
+        }
+
+        // Still processing, wait and try again
+        setOptimizationStatus('processing');
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second
+        attempts++;
+      } catch (error) {
+        console.error('Polling error:', error);
+        throw error;
+      }
+    }
+
+    throw new Error('Optimization timed out');
+  };
 
   // Debug: Watch for polyhouse changes
   useEffect(() => {
@@ -656,7 +698,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       });
 
       if (!response.ok) throw new Error('Optimization failed');
-      const optimizationResult = await response.json();
+      const data = await response.json();
+
+      // Handle async response (new backend with jobId)
+      let optimizationResult;
+      if (data.jobId) {
+        console.log('✓ Async optimization started, job ID:', data.jobId);
+        setOptimizationStatus('processing');
+        setOptimizationProgress(0);
+
+        try {
+          // Poll for completion
+          optimizationResult = await pollJobStatus(data.jobId);
+          console.log('✓ Optimization completed');
+        } catch (pollError: any) {
+          throw new Error(pollError.message || 'Optimization failed');
+        } finally {
+          setOptimizationStatus('idle');
+          setOptimizationProgress(0);
+        }
+      } else if (data.planningResult) {
+        // Handle sync response (backward compatibility)
+        optimizationResult = data.planningResult;
+      } else {
+        throw new Error('Invalid response from server');
+      }
 
       if (saveAsNew) {
         // Create new project
